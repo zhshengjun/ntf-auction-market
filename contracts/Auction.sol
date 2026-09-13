@@ -12,14 +12,14 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {
-    ERC721HolderUpgradeable
-} from "@openzeppelin/contracts-upgradeable/token/ERC721/utils/ERC721HolderUpgradeable.sol";
+    ERC721Holder
+} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import {
-    ReentrancyGuardUpgradeable
-} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+    ReentrancyGuard
+} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {
     PausableUpgradeable
-} from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {
     Ownable2StepUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
@@ -33,8 +33,8 @@ import {
 /// @notice 托管 ERC721 的公开竞价拍卖；美元估值仅用于比较出价，不保证结算时的美元价值。
 /// @dev 通过 ERC1967Proxy 使用。仅支持可信 ERC721 和白名单内的标准、非 rebase ERC20。
 contract Auction is
-    ERC721HolderUpgradeable,
-    ReentrancyGuardUpgradeable,
+    ERC721Holder,
+    ReentrancyGuard,
     PausableUpgradeable,
     Ownable2StepUpgradeable,
     UUPSUpgradeable
@@ -175,14 +175,12 @@ contract Auction is
     }
 
     function initialize(address initialOwner) external initializer {
-        if (initialOwner == address(0) || initialOwner == address(this))
+        if (initialOwner == address(0) || initialOwner == address(this)) {
             revert InvalidAddress();
-        __ERC721Holder_init();
-        __ReentrancyGuard_init();
+        }
         __Pausable_init();
+        __Ownable_init(initialOwner);
         __Ownable2Step_init();
-        __UUPSUpgradeable_init();
-        _transferOwnership(initialOwner);
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}

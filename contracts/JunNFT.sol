@@ -19,11 +19,14 @@ contract JunNFT is
     uint256 private _lastTokenId; // 默认 0
     uint256 private _maxSupply;
 
-    function initialize(uint256 maxSupply_) external initializer {
+    function initialize(
+        uint256 maxSupply_,
+        address initialOwner
+    ) external initializer {
         __ERC721_init("JunNFT", "JNFT");
         __ERC721Enumerable_init();
-        __Ownable_init();
-        __UUPSUpgradeable_init();
+        __Ownable_init(initialOwner);
+
         _maxSupply = maxSupply_;
     }
 

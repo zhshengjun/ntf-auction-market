@@ -4,28 +4,48 @@ pragma solidity ^0.8.36;
 import {Test} from "forge-std/Test.sol";
 import {Auction} from "../contracts/Auction.sol";
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import {
+    ERC721Holder
+} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract AuctionTestV2 is Auction {
     uint256 public marker;
-    function version() external pure returns (uint256) { return 2; }
-    function initializeV2(uint256 value) external reinitializer(2) onlyOwner { marker = value; }
+    function version() external pure returns (uint256) {
+        return 2;
+    }
+    function initializeV2(uint256 value) external reinitializer(2) onlyOwner {
+        marker = value;
+    }
 }
 
 contract AuctionTestNFT is ERC721 {
     constructor() ERC721("Test NFT", "NFT") {}
-    function mint(address to, uint256 id) external { _mint(to, id); }
+    function mint(address to, uint256 id) external {
+        _mint(to, id);
+    }
 }
 
 contract AuctionTestToken is ERC20 {
     uint256 public fee;
     constructor() ERC20("USD", "USD") {}
-    function decimals() public pure override returns (uint8) { return 6; }
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
-    function setFee(uint256 value) external { fee = value; }
-    function _update(address from, address to, uint256 amount) internal override {
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+    function setFee(uint256 value) external {
+        fee = value;
+    }
+    function _update(
+        address from,
+        address to,
+        uint256 amount
+    ) internal override {
         if (fee != 0 && from != address(0) && to != address(0)) {
             super._update(from, address(0), fee);
             amount -= fee;
@@ -38,10 +58,21 @@ contract AuctionTestFeed {
     uint8 public decimals = 8;
     int256 public answer = 1e8;
     uint256 public updatedAt;
-    constructor() { updatedAt = block.timestamp; }
-    function set(int256 value, uint256 timestamp) external { answer = value; updatedAt = timestamp; }
-    function setDecimals(uint8 value) external { decimals = value; }
-    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+    constructor() {
+        updatedAt = block.timestamp;
+    }
+    function set(int256 value, uint256 timestamp) external {
+        answer = value;
+        updatedAt = timestamp;
+    }
+    function setDecimals(uint8 value) external {
+        decimals = value;
+    }
+    function latestRoundData()
+        external
+        view
+        returns (uint80, int256, uint256, uint256, uint80)
+    {
         return (1, answer, updatedAt, updatedAt, 1);
     }
 }
@@ -50,8 +81,15 @@ contract AuctionReentrantToken is AuctionTestToken {
     Auction public auction;
     uint256 public auctionId;
     bytes public failure;
-    constructor(Auction target, uint256 id) { auction = target; auctionId = id; }
-    function transferFrom(address from, address to, uint256 value) public override returns (bool) {
+    constructor(Auction target, uint256 id) {
+        auction = target;
+        auctionId = id;
+    }
+    function transferFrom(
+        address from,
+        address to,
+        uint256 value
+    ) public override returns (bool) {
         (bool success, bytes memory result) = address(auction).call(
             abi.encodeCall(Auction.settleAuction, (auctionId))
         );
@@ -65,7 +103,10 @@ contract AuctionReentrantRecipient {
     Auction public auction;
     uint256 public auctionId;
     bytes public failure;
-    constructor(Auction target, uint256 id) { auction = target; auctionId = id; }
+    constructor(Auction target, uint256 id) {
+        auction = target;
+        auctionId = id;
+    }
     receive() external payable {
         (bool success, bytes memory result) = address(auction).call{value: 1}(
             abi.encodeCall(Auction.placeBid, (auctionId, address(0), 1))
@@ -85,13 +126,25 @@ contract AuctionTest is Test, ERC721Holder {
     address other = address(0xB2);
     uint256 id;
 
-    event AuctionSettled(uint256 indexed auctionId, address indexed seller, address indexed winner,
-        address token, uint256 amount, uint256 valueUsd);
+    event AuctionSettled(
+        uint256 indexed auctionId,
+        address indexed seller,
+        address indexed winner,
+        address token,
+        uint256 amount,
+        uint256 valueUsd
+    );
 
     function setUp() public {
         vm.warp(100_000);
-        auction = Auction(address(new ERC1967Proxy(address(new Auction()),
-            abi.encodeCall(Auction.initialize, (address(this))))));
+        auction = Auction(
+            address(
+                new ERC1967Proxy(
+                    address(new Auction()),
+                    abi.encodeCall(Auction.initialize, (address(this)))
+                )
+            )
+        );
         nft = new AuctionTestNFT();
         token = new AuctionTestToken();
         feed = new AuctionTestFeed();
@@ -108,7 +161,11 @@ contract AuctionTest is Test, ERC721Holder {
         token.approve(address(auction), type(uint256).max);
     }
 
-    function _create(uint256 tokenId, uint256 reserve, uint256 duration) internal returns (uint256) {
+    function _create(
+        uint256 tokenId,
+        uint256 reserve,
+        uint256 duration
+    ) internal returns (uint256) {
         nft.mint(address(this), tokenId);
         nft.approve(address(auction), tokenId);
         return auction.createAuction(address(nft), tokenId, reserve, duration);
@@ -119,7 +176,9 @@ contract AuctionTest is Test, ERC721Holder {
         auction.placeBid{value: amount}(id, address(0), amount);
     }
 
-    function _end() internal { vm.warp(auction.getAuction(id).endTime); }
+    function _end() internal {
+        vm.warp(auction.getAuction(id).endTime);
+    }
 
     function test_CreationAndQueries() public view {
         Auction.AuctionItem memory item = auction.getAuction(id);
@@ -161,11 +220,15 @@ contract AuctionTest is Test, ERC721Holder {
     function test_FirstBidCanEqualReserveButSubsequentBidMustExceed() public {
         id = _create(2, 1e18, 1 hours);
         vm.prank(bidder);
-        vm.expectRevert(abi.encodeWithSelector(Auction.BidTooLow.selector, 0.5e18, 1e18));
+        vm.expectRevert(
+            abi.encodeWithSelector(Auction.BidTooLow.selector, 0.5e18, 1e18)
+        );
         auction.placeBid{value: 0.5 ether}(id, address(0), 0.5 ether);
         _bid(bidder, 1 ether);
         vm.prank(other);
-        vm.expectRevert(abi.encodeWithSelector(Auction.BidTooLow.selector, 1e18, 1e18));
+        vm.expectRevert(
+            abi.encodeWithSelector(Auction.BidTooLow.selector, 1e18, 1e18)
+        );
         auction.placeBid{value: 1 ether}(id, address(0), 1 ether);
         _bid(bidder, 1 ether);
         assertEq(auction.getBid(id, bidder).amount, 2 ether);
@@ -176,7 +239,14 @@ contract AuctionTest is Test, ERC721Holder {
         _bid(bidder, 1 ether);
         _end();
         vm.expectEmit(true, true, true, true, address(auction));
-        emit AuctionSettled(id, address(this), bidder, address(0), 1 ether, 1e18);
+        emit AuctionSettled(
+            id,
+            address(this),
+            bidder,
+            address(0),
+            1 ether,
+            1e18
+        );
         vm.prank(other);
         auction.settleAuction(id);
         assertEq(nft.ownerOf(1), address(auction));
@@ -212,7 +282,10 @@ contract AuctionTest is Test, ERC721Holder {
 
     function test_UnsoldAndCancelledNFTClaims() public {
         auction.cancelAuction(id);
-        assertEq(uint256(auction.getAuction(id).status), uint256(Auction.Status.Cancelled));
+        assertEq(
+            uint256(auction.getAuction(id).status),
+            uint256(Auction.Status.Cancelled)
+        );
         auction.claimNFT(id, bidder);
         assertEq(nft.ownerOf(1), bidder);
         id = _create(2, 0, 1 hours);
@@ -246,7 +319,9 @@ contract AuctionTest is Test, ERC721Holder {
         auction.withdrawBid(id, bidder);
     }
 
-    function test_HighestBidLockedUntilSettledAndNeverRefundedAfterWin() public {
+    function test_HighestBidLockedUntilSettledAndNeverRefundedAfterWin()
+        public
+    {
         _bid(bidder, 1 ether);
         _end();
         vm.prank(bidder);
@@ -277,7 +352,10 @@ contract AuctionTest is Test, ERC721Holder {
         vm.prank(bidder);
         vm.expectRevert();
         auction.claimNFT(id, address(feed));
-        assertEq(uint256(auction.getAuction(id).status), uint256(Auction.Status.Active));
+        assertEq(
+            uint256(auction.getAuction(id).status),
+            uint256(Auction.Status.Active)
+        );
         auction.settleAuction(id);
         auction.withdrawProceeds(address(0), other);
         vm.prank(bidder);
@@ -327,7 +405,12 @@ contract AuctionTest is Test, ERC721Holder {
         auction.placeBid(id, address(token), 1e6);
         auction.setTokenEnabled(address(token), false);
         vm.prank(other);
-        vm.expectRevert(abi.encodeWithSelector(Auction.TokenDisabled.selector, address(token)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Auction.TokenDisabled.selector,
+                address(token)
+            )
+        );
         auction.placeBid(id, address(token), 2e6);
         _end();
         auction.settleAuction(id);
@@ -353,7 +436,12 @@ contract AuctionTest is Test, ERC721Holder {
         vm.expectRevert(Auction.InvalidPrice.selector);
         auction.quoteUsd(address(0), 1 ether);
         feed.set(1e8, block.timestamp - 1 hours - 1);
-        vm.expectRevert(abi.encodeWithSelector(Auction.StalePrice.selector, block.timestamp - 1 hours - 1));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Auction.StalePrice.selector,
+                block.timestamp - 1 hours - 1
+            )
+        );
         auction.quoteUsd(address(0), 1 ether);
         feed.set(1e8, block.timestamp);
         feed.setDecimals(18);
@@ -404,7 +492,9 @@ contract AuctionTest is Test, ERC721Holder {
         vm.expectRevert(Auction.InvalidAmount.selector);
         auction.placeBid{value: 1}(id, address(token), 1e6);
         vm.prank(bidder);
-        vm.expectRevert(abi.encodeWithSelector(Auction.UnsupportedToken.selector, other));
+        vm.expectRevert(
+            abi.encodeWithSelector(Auction.UnsupportedToken.selector, other)
+        );
         auction.placeBid(id, other, 1);
         _bid(bidder, 1 ether);
         vm.prank(bidder);
@@ -419,16 +509,24 @@ contract AuctionTest is Test, ERC721Holder {
     }
 
     function test_TimeBoundariesAndRepeatedSettlement() public {
-        vm.expectRevert(abi.encodeWithSelector(Auction.AuctionNotEnded.selector, id));
+        vm.expectRevert(
+            abi.encodeWithSelector(Auction.AuctionNotEnded.selector, id)
+        );
         auction.settleAuction(id);
         _end();
         vm.prank(bidder);
-        vm.expectRevert(abi.encodeWithSelector(Auction.AuctionEnded.selector, id));
+        vm.expectRevert(
+            abi.encodeWithSelector(Auction.AuctionEnded.selector, id)
+        );
         auction.placeBid{value: 1 ether}(id, address(0), 1 ether);
         auction.settleAuction(id);
-        vm.expectRevert(abi.encodeWithSelector(Auction.AuctionNotActive.selector, id));
+        vm.expectRevert(
+            abi.encodeWithSelector(Auction.AuctionNotActive.selector, id)
+        );
         auction.settleAuction(id);
-        vm.expectRevert(abi.encodeWithSelector(Auction.AuctionNotFound.selector, 0));
+        vm.expectRevert(
+            abi.encodeWithSelector(Auction.AuctionNotFound.selector, 0)
+        );
         auction.getAuction(0);
     }
 
@@ -456,39 +554,69 @@ contract AuctionTest is Test, ERC721Holder {
     }
 
     function test_ConfigCannotBeSilentlyReplaced() public {
-        vm.expectRevert(abi.encodeWithSelector(Auction.PriceAlreadyConfigured.selector, address(0)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Auction.PriceAlreadyConfigured.selector,
+                address(0)
+            )
+        );
         auction.configureToken(address(0), address(feed), 2 hours);
         vm.expectRevert(Auction.InvalidPriceConfig.selector);
         auction.configureToken(other, address(feed), 0);
-        vm.expectRevert(abi.encodeWithSelector(Auction.UnsupportedToken.selector, other));
+        vm.expectRevert(
+            abi.encodeWithSelector(Auction.UnsupportedToken.selector, other)
+        );
         auction.configureToken(other, address(feed), 1 hours);
     }
 
     function test_ReentrantETHRecipientCannotPlaceBidDuringPayment() public {
         _bid(bidder, 1 ether);
         _bid(other, 2 ether);
-        AuctionReentrantRecipient recipient = new AuctionReentrantRecipient(auction, id);
+        AuctionReentrantRecipient recipient = new AuctionReentrantRecipient(
+            auction,
+            id
+        );
         vm.prank(bidder);
         auction.withdrawBid(id, address(recipient));
-        assertEq(recipient.failure(), abi.encodeWithSignature("Error(string)", "ReentrancyGuard: reentrant call"));
+        assertEq(
+            recipient.failure(),
+            abi.encodeWithSignature(
+                "Error(string)",
+                "ReentrancyGuard: reentrant call"
+            )
+        );
         assertEq(address(recipient).balance, 1 ether);
         assertEq(auction.totalLiabilities(address(0)), 2 ether);
     }
 
-    function test_ReentrantTokenCannotSettleAnotherAuctionDuringDeposit() public {
+    function test_ReentrantTokenCannotSettleAnotherAuctionDuringDeposit()
+        public
+    {
         _end();
         uint256 expiredId = id;
         id = _create(2, 0, 1 hours);
         feed.set(1e8, block.timestamp);
-        AuctionReentrantToken malicious = new AuctionReentrantToken(auction, expiredId);
+        AuctionReentrantToken malicious = new AuctionReentrantToken(
+            auction,
+            expiredId
+        );
         auction.configureToken(address(malicious), address(feed), 1 hours);
         malicious.mint(bidder, 1e6);
         vm.startPrank(bidder);
         malicious.approve(address(auction), 1e6);
         auction.placeBid(id, address(malicious), 1e6);
         vm.stopPrank();
-        assertEq(malicious.failure(), abi.encodeWithSignature("Error(string)", "ReentrancyGuard: reentrant call"));
-        assertEq(uint256(auction.getAuction(expiredId).status), uint256(Auction.Status.Active));
+        assertEq(
+            malicious.failure(),
+            abi.encodeWithSignature(
+                "Error(string)",
+                "ReentrancyGuard: reentrant call"
+            )
+        );
+        assertEq(
+            uint256(auction.getAuction(expiredId).status),
+            uint256(Auction.Status.Active)
+        );
         assertEq(auction.totalLiabilities(address(malicious)), 1e6);
     }
 
@@ -512,7 +640,12 @@ contract AuctionTest is Test, ERC721Holder {
     function test_StaleBidFailsBeforeMovingERC20AndZeroBidRejected() public {
         feed.set(1e8, block.timestamp - 1 hours - 1);
         vm.prank(bidder);
-        vm.expectRevert(abi.encodeWithSelector(Auction.StalePrice.selector, block.timestamp - 1 hours - 1));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Auction.StalePrice.selector,
+                block.timestamp - 1 hours - 1
+            )
+        );
         auction.placeBid(id, address(token), 1e6);
         assertEq(token.balanceOf(bidder), 100e6);
         assertEq(token.balanceOf(address(auction)), 0);
@@ -536,20 +669,32 @@ contract AuctionTest is Test, ERC721Holder {
 
     function test_UUPSInitializationAndUpgradePreserveState() public {
         Auction implementation = new Auction();
-        vm.expectRevert(bytes("Initializable: contract is already initialized"));
+        vm.expectRevert(
+            bytes("Initializable: contract is already initialized")
+        );
         implementation.initialize(bidder);
-        vm.expectRevert(bytes("Initializable: contract is already initialized"));
+        vm.expectRevert(
+            bytes("Initializable: contract is already initialized")
+        );
         auction.initialize(bidder);
         vm.expectRevert(Auction.InvalidAddress.selector);
-        new ERC1967Proxy(address(implementation), abi.encodeCall(Auction.initialize, (address(0))));
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Auction.initialize, (address(0)))
+        );
         _bid(bidder, 1 ether);
         AuctionTestV2 next = new AuctionTestV2();
         vm.prank(bidder);
         vm.expectRevert(bytes("Ownable: caller is not the owner"));
-        auction.upgradeTo(address(next));
-        vm.expectRevert(bytes("ERC1967Upgrade: new implementation is not UUPS"));
-        auction.upgradeTo(address(feed));
-        auction.upgradeToAndCall(address(next), abi.encodeCall(AuctionTestV2.initializeV2, (42)));
+        auction.upgradeToAndCall(address(next), bytes(""));
+        vm.expectRevert(
+            bytes("ERC1967Upgrade: new implementation is not UUPS")
+        );
+        auction.upgradeToAndCall(address(feed), bytes(""));
+        auction.upgradeToAndCall(
+            address(next),
+            abi.encodeCall(AuctionTestV2.initializeV2, (42))
+        );
         assertEq(AuctionTestV2(address(auction)).version(), 2);
         assertEq(AuctionTestV2(address(auction)).marker(), 42);
         assertEq(auction.owner(), address(this));
@@ -563,7 +708,10 @@ contract AuctionTest is Test, ERC721Holder {
         assertEq(nft.ownerOf(1), other);
     }
 
-    function testFuzz_LiabilitiesConservedAcrossRefundAndSettlement(uint96 first, uint96 extra) public {
+    function testFuzz_LiabilitiesConservedAcrossRefundAndSettlement(
+        uint96 first,
+        uint96 extra
+    ) public {
         uint256 a = bound(uint256(first), 1, 10 ether);
         uint256 b = a + bound(uint256(extra), 1, 10 ether);
         _bid(bidder, a);
