@@ -2,7 +2,7 @@
 
 `Auction` 是通过 ERC1967Proxy 使用的 UUPS 拍卖实现。支持 ETH 和管理员配置的 ERC20，以出价时的美元估值比较价格。NFT、竞价资金和卖家收入分别记账；拍卖结算、NFT 领取和资金提现互不依赖接收方能否立即收款。
 
-本次重构基于“尚未部署”的前提，重新定义接口与存储布局。它不是旧版本代理的兼容升级。`JunNFT.sol` 本次未修改，也未纳入拍卖合约的完整测试范围。
+本次重构基于“尚未部署”的前提，重新定义接口与存储布局。它不是旧版本代理的兼容升级。拍卖测试通过 ERC1967Proxy 初始化项目自己的 `JunNFT`，使用其真实的铸造、授权、转移和枚举逻辑；`JunNFT.sol` 业务代码未修改。这不等于已覆盖 JunNFT 自身的全部权限、销毁与升级场景。
 
 ## 生命周期与资金
 
@@ -34,7 +34,7 @@ stateDiagram-v2
 | 接口 | 调用者 | 含义 |
 | --- | --- | --- |
 | `initialize(initialOwner)` | 代理构造时执行一次 | 指定管理员；实现合约已锁定初始化 |
-| `configureToken(token, feed, maxAge)` | owner | 添加币种及 token/USD 价格规则，仅一次 |
+| `configureToken(token, feed, maxAge)` | owner | 添加或更新币种的 token/USD 价格规则 |
 | `setTokenEnabled(token, enabled)` | owner | 停用/恢复该币种的新出价 |
 | `pause()` / `unpause()` | owner | 暂停/恢复创建和出价，不阻塞退出 |
 | `createAuction(nft, tokenId, reservePriceUsd, duration)` | NFT 持有人 | 授权代理后创建拍卖 |
@@ -53,7 +53,7 @@ stateDiagram-v2
 
 - 只配置经核实的 **token/USD Chainlink feed 代理**。地址有代码、价格大于零并不能证明交易对正确；管理员必须核对网络、交易对、精度与 heartbeat。
 - 校验价格为正、时间戳非零且不在未来、更新时间不超过 `maxAge`；feed 精度若偏离首次配置值则拒绝报价。
-- feed、精度及 `maxAge` 配置不可覆盖，避免拍卖中途悄然改变计价规则。允许停用币种；停用、feed 中断或价格过期不会阻塞已有拍卖结算和提款。需要替换价格规则时，应经审查实现升级。
+- owner 可再次调用 `configureToken(token, feed, maxAge)` 更换价格源或调整有效期；新配置必须通过当前价格校验，更新失败保留旧配置。更新保持币种启用状态及代币精度不变，feed 精度可以随新价格源调整，并发出 `PriceConfigured` 事件。新配置立即影响后续报价和出价，不重算已有出价的美元估值或托管数量。管理员必须保证新旧 feed 对应同一 token/USD 交易对；放宽 `maxAge` 只扩大可接受的价格年龄，不会促使预言机更新。停用、feed 中断或价格过期不会阻塞已有拍卖结算和提款。
 - 美元估值取出价时的快照；不同币种价格会波动，结算仍支付原币种与原数量，没有锁定美元价值或兑换服务。
 - 当前面向 Ethereum L1/Sepolia。**未实现 L2 sequencer uptime/grace-period 校验，不应不加修改地用于 L2。**
 - 仅支持标准、非 rebase、无转账税的 ERC20。入账核对合约余额增量，出账同时核对付款方扣款和收款方到账。`SafeERC20` 处理返回值异常。代币后续若启用黑名单、冻结或转账税，提款可能回滚；管理员只能停止新增风险，不能绕过代币自身权限。
@@ -65,15 +65,24 @@ stateDiagram-v2
 
 ## 构建与验证
 
+测试使用 **Sepolia 本地分叉**，固定区块 `11699475`。Solidity 测试和 Mocha 部署测试共用分叉来源；不会向 Sepolia 广播交易，不需要私钥或水龙头余额。
+
+- 正常流程的 NFT 使用项目 `JunNFT` 代理；ETH 使用分叉环境原生币，USDC 使用 [Circle 官方 Ethereum Sepolia 地址](https://developers.circle.com/stablecoins/usdc-contract-addresses)：`0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`（6 位精度）。
+- `vm.deal` 和 forge-std 的 `deal(token, account, amount)` 只为本地账户设置测试余额，不在真实 USDC 合约上申请铸币。
+- 不再部署普通支付代币。`FeeOnTransferTestToken` / `AuctionReentrantToken` 仅用于手续费和重入异常测试；价格源仍使用 mock，因此没有声称已验证真实 Chainlink feed。
+- 默认从公共 RPC 读取分叉状态；可通过环境变量 `SEPOLIA_RPC_URL` 覆盖为自己的 RPC。测试需要网络访问，RPC 必须支持该固定区块的历史状态。分叉测试读取此环境变量，不读取 Hardhat keystore 中同名值。
+- 需要启动可交互的本地分叉节点时，使用 `npx hardhat node --network sepoliaFork`；监听的本地节点与真实 `--network sepolia` 是两个不同环境。
+
+
 ```sh
 npm ci
 npx hardhat test --build-profile production
 npx tsc --noEmit
 ```
 
-默认和 production 配置均使用 solc 0.8.36、Cancun、optimizer 200 runs；构建输出包含 `storageLayout`。`@openzeppelin/contracts-upgradeable` 显式固定在本项目已使用的 4.9.6，避免依赖 Chainlink 偶然带入的版本。不要把升级基类直接换成其他主版本后覆盖已有代理。
+默认和 production 配置均使用 solc 0.8.36、Cancun、optimizer 200 runs；构建输出包含 `storageLayout`。当前项目使用 OpenZeppelin 5.6.1 系列，`contracts-upgradeable` 已显式声明为依赖；测试按该版本的自定义错误进行断言。不要把升级基类直接换成其他主版本后覆盖已有代理。
 
-本次验证：30 项 Solidity 测试、1 项 Mocha/Ignition 部署测试通过；资金守恒 fuzz 测试运行 256 组输入。测试涵盖权限、两步交接、非法参数、到期边界、重复结算/领取、退款、混合币种、多拍卖隔离、暂停期间退出、无效/过期 feed、转账税、ETH/ERC20 回调重入及 UUPS 原子升级初始化。编译器布局核对确认测试 V2 保留 V1 的全部 22 项存储条目。
+本次验证：33 项 Solidity 测试、1 项 Mocha/Ignition 部署测试通过；资金守恒 fuzz 测试运行 256 组输入。测试涵盖权限、两步交接、非法参数、到期边界、重复结算/领取、退款、混合币种、多拍卖隔离、暂停期间退出、无效/过期 feed、转账税、ETH/ERC20 回调重入及 UUPS 原子升级初始化。测试通过升级及初始化后继续结算、提现和领取 NFT，验证已有业务状态保留；实际版本升级仍需核对编译器存储布局。
 
 运行时代码约 14 KB，部署测试另行断言小于 EIP-170 的 24,576 字节限制。以上都是本地验证，尚未进行真实网络部署、真实 feed 集成或独立安全审计。
 

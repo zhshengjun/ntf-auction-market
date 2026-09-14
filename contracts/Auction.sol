@@ -106,7 +106,6 @@ contract Auction is
     error BidTooLow(uint256 valueUsd, uint256 minimumUsd);
     error UnsupportedToken(address token);
     error TokenDisabled(address token);
-    error PriceAlreadyConfigured(address token);
     error InvalidPriceConfig();
     error InvalidPrice();
     error StalePrice(uint256 updatedAt);
@@ -197,14 +196,15 @@ contract Auction is
         _unpause();
     }
 
-    /// @notice 价格规则只配置一次；token 必须对应可信的 token/USD feed 代理。
+    /// @notice 添加或更新 token/USD 价格配置；更新保留启用状态及代币精度。
+    /// @dev 新配置用于后续报价和出价，不重算已有出价的美元估值。
     function configureToken(
         address token,
         address feed,
         uint256 maxAge
     ) external onlyOwner {
-        if (priceConfigs[token].feed != address(0))
-            revert PriceAlreadyConfigured(token);
+        PriceConfig memory previous = priceConfigs[token];
+        bool configured = previous.feed != address(0);
         if (feed.code.length == 0 || maxAge == 0 || token == address(this))
             revert InvalidPriceConfig();
         if (token != address(0) && token.code.length == 0)
@@ -215,14 +215,17 @@ contract Auction is
         uint8 feedDecimals = AggregatorV3Interface(feed).decimals();
         if (tokenDecimals > 18 || feedDecimals > 18)
             revert InvalidPriceConfig();
-        priceConfigs[token] = PriceConfig(
+        if (configured && tokenDecimals != previous.tokenDecimals)
+            revert InvalidPriceConfig();
+        PriceConfig memory config = PriceConfig(
             feed,
             tokenDecimals,
             feedDecimals,
-            true,
+            configured ? previous.enabled : true,
             maxAge
         );
-        _priceUsd18(priceConfigs[token]);
+        _priceUsd18(config);
+        priceConfigs[token] = config;
         emit PriceConfigured(token, feed, tokenDecimals, feedDecimals, maxAge);
     }
 
